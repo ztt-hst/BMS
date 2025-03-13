@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/application/drive",
+                "${workspaceFolder}/application/common/inc",
+                "${workspaceFolder}/application/primary",
+                "${workspaceFolder}/Libraries/CMSIS/GD/GD32F30x/Include",
+                "${workspaceFolder}/Libraries/CMSIS/Include",
+                "${workspaceFolder}/Libraries/GD32F30x_standard_peripheral/Include"
+            ],
+            "defines": [
+                "USE_STDPERIPH_DRIVER",
+                "GD32F30X_HD"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
