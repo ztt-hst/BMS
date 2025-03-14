@@ -17,7 +17,6 @@
 
 /* 函数声明 */
 void WDI_Init(void);           // 初始化WDI引脚
-void WDI_Feed(void);
 void WDI_AutoFeed_Init(void);  // 初始化自动喂狗定时器
 void WDI_AutoFeed_Start(void); // 启动自动喂狗
 void WDI_AutoFeed_Stop(void);  // 停止自动喂狗

@@ -11,6 +11,7 @@
 #define MAX_FRAME_LENGTH (128)
 #define USART0_DATA_ADDRESS ((uint32_t)&USART_DATA(USART0))
 
+/* 接收状态 */
 typedef enum {
     RECEIVING_ADDRESS,
     RECEIVING_FUNCTION,
@@ -29,6 +30,11 @@ static uint8_t bytes_counter = 0;
 static uint16_t calc_crc = 0;
 static uint8_t send_buffer[MAX_FRAME_LENGTH] = {0};
 
+/**
+  * @brief  配置UART的DMA发送
+  * @param  无
+  * @retval 无
+  */
 void uart_dma_send_init(void)
 {
     rcu_periph_clock_enable(RCU_DMA0);
@@ -53,6 +59,12 @@ void uart_dma_send_init(void)
     dma_channel_enable(DMA0, DMA_CH3);
 }
 
+/**
+ * @brief  使用 DMA 发送 USART 数据
+ * @param  buffer  要发送的数据缓冲区（指向待发送数据的指针）
+ * @param  size    发送的数据长度（字节数）
+ * @retval 无
+ */
 static void usartSendDMA(uint8_t *buffer, uint32_t size)
 {
     if (dma_transfer_number_get(DMA0, DMA_CH3) == 0) {
@@ -63,10 +75,16 @@ static void usartSendDMA(uint8_t *buffer, uint32_t size)
     }
 }
 
+/**
+  * @brief  重置接收
+  * @param  无
+  * @retval 无
+  */
 void reset_reception(void)
 {
-    current_state = RECEIVING_ADDRESS;
-    received_frame.addressID = 0;
+    
+    current_state = RECEIVING_ADDRESS;  //重置接收状态
+    received_frame.addressID = 0;       //清空接收数据
     received_frame.functionCode = 0;
     received_frame.dataCount = 0;
     received_frame.crcCheck = 0;
@@ -74,30 +92,43 @@ void reset_reception(void)
         free(received_frame.dataField);
         received_frame.dataField = NULL;
     }
-    memset(received_buffer, 0, sizeof(received_buffer));
+    memset(received_buffer, 0, sizeof(received_buffer));    //清空接收缓冲区
     received_buffer_number = 0;
 
     bytes_counter = 0;
     calc_crc = 0;
 }
 
+/**
+  * @brief  处理升级
+  * @param  无
+  * @retval 无
+  */
 void process_upgrade(void)
 {
-#if 0
+    #if 0
     UpgradeFlag flag = {0};
     flag.isupgrade = UPGRADESTART;
     upgrade_write_flag(&flag);
-#endif
+    #endif
     upgrade_fmc_write_data(MUPGRADE_FLAG_ADDRESS, UPGRADESTART);
 }
 
+/**
+  * @brief  处理读取
+  * @param  input  指向接收到的读取命令
+  * @retval 无
+  */
 void process_read(const CommFrame *input)
 {
     CommFrame *frame = createCommFrame(input->addressID, PU_FUN_READ, input->dataCount);
     if (!frame)
+    {
         return;
+    }
     uint16_t i = 0;
-    for (i = 0; i < input->dataCount; i++) {
+    for (i = 0; i < input->dataCount; i++) 
+    {
         uint32_t register_id = pu_search_id(input->dataField[i].address, input->dataField[i].offset);
         pu_set_status(register_id, 1);
         frame->dataField[i] = createBufdata(input->dataField[i].address, input->dataField[i].offset, pu_get_data(register_id));
@@ -106,13 +137,19 @@ void process_read(const CommFrame *input)
     uint8_t *serialized = serializeCommFrame(frame, &buf_length);
     //memcpy(send_buffer, serialized, buf_length);
     //usartSendDMA(send_buffer, buf_length);
-    if (serialized) {
+    if (serialized) 
+    {
         free(serialized);
         serialized = NULL;
     }
     freeCommFrame(frame);
 }
 
+/**
+  * @brief  处理写入
+  * @param  input  指向接收到的写入命令
+  * @retval 无
+  */
 void process_write(const CommFrame *input)
 {
     uint16_t i = 0;
@@ -125,7 +162,12 @@ void process_write(const CommFrame *input)
     }
 }
 
-void process_replay(void)
+/**
+  * @brief  解析命令并执行相应的处理
+  * @param  input  指向接收到的写入命令
+  * @retval 无
+  */
+void process_reply(void)
 {
     if (received_frame.functionCode == PU_FUN_READ) {
         process_read(&received_frame);
@@ -136,12 +178,20 @@ void process_replay(void)
     }
 }
 
-void send_replay_data(uint32_t index)
+/**
+  * @brief  发送读取请求的响应数据
+  * @param  index  索引
+  * @retval 无
+  */
+void send_reply_data(uint32_t index)
 {
-    uint8_t replay_data[2] = {0};
+    uint8_t replay_data[2] = {0};   
     i2c_buffer_read(replay_data, pu_get_command(index), 2);
     CommFrame *frame = createCommFrame(0x01, PU_FUN_READ, 1);
-    if(!frame) return;
+    if(!frame) 
+    {
+        return;
+    }
     uint16_t voltage_value = (replay_data[1] << 8) | replay_data[0];
     pu_set_data(index, voltage_value);
     frame->dataField[0] = createBufdata(pu_get_address(index), pu_get_offset(index), pu_get_data(index));
@@ -149,13 +199,19 @@ void send_replay_data(uint32_t index)
     uint8_t *serialized = serializeCommFrame(frame, &buf_length);
     memcpy(send_buffer, serialized, buf_length);
     usartSendDMA(send_buffer, buf_length);
-    if (serialized) {
+    if (serialized) 
+    {
         free(serialized);
         serialized = NULL;
     }
     freeCommFrame(frame);
 }
 
+/**
+  * @brief  写入命令数据
+  * @param  index  索引
+  * @retval 无
+  */
 void write_command_data(uint32_t index)
 {
     uint8_t command = pu_get_command(index);
@@ -168,14 +224,23 @@ void write_command_data(uint32_t index)
     }
 }
 
+/**
+  * @brief  解析收到的数据
+  * @param  received_byte 当前接收到的字节
+  * @retval 无
+  */
 void parse_received_data(uint8_t received_byte)
 {
+    //完成或者错误
     if (current_state == RECEIVING_COMPLETE || current_state == RECEIVING_ERROR) {
         reset_reception();
     }
-    switch (current_state) {
-    case RECEIVING_ADDRESS: {
-        if (current_state != RECEIVING_ERROR) {
+    switch (current_state) 
+    {
+    case RECEIVING_ADDRESS: 
+    {
+        if (current_state != RECEIVING_ERROR) 
+        {
             received_frame.addressID = received_byte;
             received_buffer[received_buffer_number++] = received_byte;
             current_state = RECEIVING_FUNCTION;
@@ -183,36 +248,48 @@ void parse_received_data(uint8_t received_byte)
     }
     break;
 
-    case RECEIVING_FUNCTION: {
-        if (current_state != RECEIVING_ERROR) {
-            if (received_byte == PU_FUN_READ || received_byte == PU_FUN_WRITE || received_byte == PU_FUN_UPGRADE) {
+    case RECEIVING_FUNCTION: 
+    {
+        if (current_state != RECEIVING_ERROR) 
+        {
+            if (received_byte == PU_FUN_READ || received_byte == PU_FUN_WRITE || received_byte == PU_FUN_UPGRADE) 
+            {
                 received_frame.functionCode = received_byte;
                 received_buffer[received_buffer_number++] = received_byte;
                 current_state = RECEIVING_DATA_LENGTH;
-            } else {
+            } 
+            else 
+            {
                 current_state = RECEIVING_ERROR;
             }
         }
     }
     break;
 
-    case RECEIVING_DATA_LENGTH: {
-        if (current_state != RECEIVING_ERROR) {
-            if (bytes_counter == 0) {
+    case RECEIVING_DATA_LENGTH: 
+    {
+        if (current_state != RECEIVING_ERROR) 
+        {
+            if (bytes_counter == 0) 
+            {
                 received_frame.dataCount = (uint16_t)(received_byte << 8);
                 received_buffer[received_buffer_number++] = received_byte;
                 bytes_counter++;
-            } else if (bytes_counter == 1) {
+            } 
+            else if (bytes_counter == 1) 
+            {
                 received_frame.dataCount |= (uint16_t)(received_byte);
                 received_buffer[received_buffer_number++] = received_byte;
-                bytes_counter = 0;
-                if (received_frame.dataCount < 1 || received_frame.dataCount > MAX_PUDATA_COUNT) {
+                bytes_co                                                                                                                                                                                                                                    unter = 0;
+                if (received_frame.dataCount < 1 || received_frame.dataCount > MAX_PUDATA_COUNT)
+                {
                     PRINT_ERROR("This length is not correct %d \n", received_frame.dataCount);
                     current_state = RECEIVING_ERROR;
                     break;
                 }
                 received_frame.dataField = (Bufdata *)malloc(sizeof(Bufdata) * received_frame.dataCount);
-                if (!received_frame.dataField) {
+                if (!received_frame.dataField) 
+                {
                     PRINT_ERROR("This pointer is error\n");
                     current_state = RECEIVING_ERROR;
                     break;
@@ -224,12 +301,15 @@ void parse_received_data(uint8_t received_byte)
     }
     break;
 
-    case RECEIVING_DATA: {
-        if (current_state != RECEIVING_ERROR && received_frame.dataField) {
+    case RECEIVING_DATA: 
+    {
+        if (current_state != RECEIVING_ERROR && received_frame.dataField) 
+        {
             uint8_t *pData = (uint8_t *)received_frame.dataField;
             pData[bytes_counter++] = received_byte;
             received_buffer[received_buffer_number++] = received_byte;
-            if (bytes_counter >= (sizeof(Bufdata) * received_frame.dataCount)) {
+            if (bytes_counter >= (sizeof(Bufdata) * received_frame.dataCount)) 
+            {
                 calc_crc = calculate_crc16(received_buffer, received_buffer_number);
                 current_state = RECEIVING_CRC;
                 bytes_counter = 0;
@@ -238,27 +318,35 @@ void parse_received_data(uint8_t received_byte)
     }
     break;
 
-    case RECEIVING_CRC: {
-        if (bytes_counter == 0) {
+    case RECEIVING_CRC: 
+    {
+        if (bytes_counter == 0) 
+        {
             received_frame.crcCheck = (uint16_t)(received_byte << 8);
             received_buffer[received_buffer_number++] = received_byte;
             bytes_counter++;
-        } else if (bytes_counter == 1) {
+        } 
+        else if (bytes_counter == 1) 
+        {
             received_frame.crcCheck |= received_byte;
             received_buffer[received_buffer_number++] = received_byte;
             bytes_counter = 0;
-            if (calc_crc == received_frame.crcCheck) {
+            if (calc_crc == received_frame.crcCheck) 
+            {
                 current_state = RECEIVING_COMPLETE;
                 int i = 0;
                 int j = sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint32_t);
                 uint8_t *pData = (uint8_t *)received_frame.dataField;
-                for (i = 0; i < received_frame.dataCount; i++) {
+                for (i = 0; i < received_frame.dataCount; i++) 
+                {
                     received_frame.dataField[i].address = (pData[i * j] << 8) + pData[(i * j) + 1];
                     received_frame.dataField[i].offset = (pData[(i * j) + 2] << 8) + pData[(i * j) + 3];
                     received_frame.dataField[i].data = (pData[(i * j) + 4] << 24) + (pData[(i * j) + 5] << 16) + (pData[(i * j) + 6] << 8) + pData[(i * j) + 7];
                 }
                 process_replay();
-            } else {
+            } 
+            else 
+            {
                 current_state = RECEIVING_ERROR;
             }
             reset_reception();
@@ -273,7 +361,8 @@ void parse_received_data(uint8_t received_byte)
         break;
     }
 
-    if (current_state == RECEIVING_COMPLETE || current_state == RECEIVING_ERROR) {
+    if (current_state == RECEIVING_COMPLETE || current_state == RECEIVING_ERROR) 
+    {
         reset_reception();
     }
 }
